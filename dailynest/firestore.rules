@@ -1,0 +1,141 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Boilerplate defaults to deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTask(data) {
+      return data.size() >= 6 && data.size() <= 8
+        && data.userId == request.auth.uid
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 150
+        && data.status in ["todo", "in_progress", "completed"]
+        && data.priority in ["low", "medium", "high"]
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && (data.keys().hasAll(["description"]) ? (data.description is string && data.description.size() <= 2000) : true)
+        && (data.keys().hasAll(["dueDate"]) ? (data.dueDate is timestamp || data.dueDate == null) : true);
+    }
+
+    match /tasks/{taskId} {
+      allow read: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+      
+      allow create: if isSignedIn() && isValidId(taskId)
+        && isValidTask(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn() && isValidId(taskId)
+        && existing().userId == request.auth.uid
+        && isValidTask(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasAny(["title", "description", "status", "priority", "dueDate", "updatedAt"]);
+        
+      allow delete: if isSignedIn() && isValidId(taskId)
+        && existing().userId == request.auth.uid;
+    }
+
+    function isValidHabit(data) {
+      return data.size() >= 5 && data.size() <= 7
+        && data.userId == request.auth.uid
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 100
+        && data.frequency in ["daily", "weekly"]
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && (data.keys().hasAll(["color"]) ? (data.color is string && data.color.size() <= 50) : true)
+        && (data.keys().hasAll(["icon"]) ? (data.icon is string && data.icon.size() <= 50) : true);
+    }
+
+    match /habits/{habitId} {
+      allow read, list: if isSignedIn() && existing().userId == request.auth.uid;
+      
+      allow create: if isSignedIn() && isValidId(habitId)
+        && isValidHabit(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+        
+      allow update: if isSignedIn() && isValidId(habitId)
+        && existing().userId == request.auth.uid
+        && isValidHabit(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasAny(["title", "frequency", "color", "icon", "updatedAt"]);
+
+      allow delete: if isSignedIn() && isValidId(habitId)
+        && existing().userId == request.auth.uid;
+    }
+
+    function isValidHabitLog(data) {
+      return data.size() == 4
+        && data.userId == request.auth.uid
+        && data.habitId is string && data.habitId.size() <= 128
+        && data.date is string && data.date.size() == 10
+        && data.completedAt is timestamp;
+    }
+
+    match /habit_logs/{logId} {
+      allow read, list: if isSignedIn() && existing().userId == request.auth.uid;
+      
+      allow create: if isSignedIn() && isValidId(logId)
+        && isValidHabitLog(incoming())
+        && incoming().completedAt == request.time
+        && exists(/databases/$(database)/documents/habits/$(incoming().habitId))
+        && get(/databases/$(database)/documents/habits/$(incoming().habitId)).data.userId == request.auth.uid;
+
+      allow delete: if isSignedIn() && isValidId(logId)
+        && existing().userId == request.auth.uid;
+    }
+
+    function isValidJournal(data) {
+      return data.size() == 7
+        && data.userId == request.auth.uid
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.content is string && data.content.size() > 0 && data.content.size() <= 100000
+        && data.mood is string && data.mood.size() > 0 && data.mood.size() <= 20
+        && data.date is string
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /journals/{journalId} {
+      allow read, list: if isSignedIn() && existing().userId == request.auth.uid;
+      
+      allow create: if isSignedIn() && isValidId(journalId)
+        && isValidJournal(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+        
+      allow update: if isSignedIn() && isValidId(journalId)
+        && existing().userId == request.auth.uid
+        && isValidJournal(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasAny(["title", "content", "mood", "date", "updatedAt"]);
+
+      allow delete: if isSignedIn() && isValidId(journalId)
+        && existing().userId == request.auth.uid;
+    }
+  }
+}
